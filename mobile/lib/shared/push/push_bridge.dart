@@ -64,7 +64,8 @@ class BuzzPushAuthorizationStatusNotifier
 }
 
 Future<BuzzPushAuthorizationStatus> readBuzzPushAuthorizationStatus() async {
-  if (defaultTargetPlatform != TargetPlatform.iOS) {
+  if (defaultTargetPlatform != TargetPlatform.iOS &&
+      defaultTargetPlatform != TargetPlatform.android) {
     return BuzzPushAuthorizationStatus.authorized;
   }
   final raw = await _channel.invokeMethod<String>(
@@ -83,7 +84,10 @@ Future<BuzzPushAuthorizationStatus> readBuzzPushAuthorizationStatus() async {
 }
 
 Future<bool> openBuzzPushNotificationSettings() async {
-  if (defaultTargetPlatform != TargetPlatform.iOS) return false;
+  if (defaultTargetPlatform != TargetPlatform.iOS &&
+      defaultTargetPlatform != TargetPlatform.android) {
+    return false;
+  }
   return await _channel.invokeMethod<bool>('openNotificationSettings') ?? false;
 }
 
@@ -91,6 +95,13 @@ Future<bool> openBuzzPushNotificationSettings() async {
 /// the Flutter method channel attaches.
 final apnsDeviceToken = ValueNotifier<String?>(null);
 final apnsRegistrationError = ValueNotifier<String?>(null);
+final fcmDeviceToken = ValueNotifier<String?>(null);
+final fcmRegistrationError = ValueNotifier<String?>(null);
+
+ValueNotifier<String?> get buzzPushDeviceToken =>
+    defaultTargetPlatform == TargetPlatform.android
+    ? fcmDeviceToken
+    : apnsDeviceToken;
 
 final pushEndpointGrants = ValueNotifier<List<BuzzPushEndpointGrant>>([]);
 final pushEndpointGrantError = ValueNotifier<String?>(null);
@@ -140,7 +151,10 @@ Future<void> syncPendingBuzzPushNotificationResponse() async {
 /// requests. Display authorization is intentionally not returned or persisted:
 /// APNs registration and enrollment remain valid while display is denied.
 Future<void> startBuzzPushRegistration() async {
-  if (defaultTargetPlatform != TargetPlatform.iOS) return;
+  if (defaultTargetPlatform != TargetPlatform.iOS &&
+      defaultTargetPlatform != TargetPlatform.android) {
+    return;
+  }
   try {
     await _channel.invokeMethod<void>('startRegistration');
   } on MissingPluginException {
@@ -313,6 +327,24 @@ void installBuzzPushMethodHandler() {
             ? message
             : 'APNs registration failed';
         debugPrint('APNs registration failed: ${apnsRegistrationError.value}');
+        return null;
+      case 'fcmTokenChanged':
+        final args = call.arguments;
+        if (args is Map) {
+          final token = args['token'];
+          if (token is String && token.isNotEmpty) {
+            fcmDeviceToken.value = token;
+            fcmRegistrationError.value = null;
+          }
+        }
+        return null;
+      case 'fcmRegistrationFailed':
+        final args = call.arguments;
+        final message = args is Map ? args['message'] : null;
+        fcmRegistrationError.value = message is String && message.isNotEmpty
+            ? message
+            : 'FCM registration failed';
+        debugPrint('FCM registration failed: ${fcmRegistrationError.value}');
         return null;
       case 'notificationOpened':
         final link = _pushNotificationLink(call.arguments);

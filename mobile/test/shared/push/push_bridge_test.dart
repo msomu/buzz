@@ -19,6 +19,8 @@ void main() {
   setUp(() {
     apnsDeviceToken.value = null;
     apnsRegistrationError.value = null;
+    fcmDeviceToken.value = null;
+    fcmRegistrationError.value = null;
     pushEndpointGrants.value = const [];
     pushEndpointGrantError.value = null;
     pushCommunitySnapshotError.value = null;
@@ -44,6 +46,20 @@ void main() {
         );
     expect(apnsDeviceToken.value, '01ab');
     expect(apnsRegistrationError.value, isNull);
+  });
+
+  test('captures FCM token success and clears the previous error', () async {
+    fcmRegistrationError.value = 'old error';
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          _channel.name,
+          _channel.codec.encodeMethodCall(
+            const MethodCall('fcmTokenChanged', {'token': 'aaa:APA91b'}),
+          ),
+          (_) {},
+        );
+    expect(fcmDeviceToken.value, 'aaa:APA91b');
+    expect(fcmRegistrationError.value, isNull);
   });
 
   test(

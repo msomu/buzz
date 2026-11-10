@@ -16,6 +16,15 @@ pub struct AppProfileConfig {
     pub apns_environment: ApnsEnvironment,
 }
 
+#[derive(Debug, Clone)]
+pub struct FcmProfileConfig {
+    pub project_id: String,
+    pub client_email: String,
+    pub private_key_pem: String,
+    pub signing_cert_sha256: String,
+    pub public_delivery_url: url::Url,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyConfig {
     pub id: String,
@@ -33,6 +42,8 @@ pub struct Config {
     pub endpoint_quota_max_deliveries: i64,
     /// Server-owned dogfood application identity and APNs transport.
     pub profile: AppProfileConfig,
+    /// Optional Android FCM profile. Absent when no FCM variables are set.
+    pub fcm: Option<FcmProfileConfig>,
     pub database_url: String,
     pub app_attest_root_cert_path: PathBuf,
     /// Ordered current key first, followed by decrypt-only predecessors.
@@ -109,6 +120,68 @@ fn parse_profile(e: &HashMap<String, String>) -> Result<AppProfileConfig, Config
     })
 }
 
+fn parse_fcm(e: &HashMap<String, String>) -> Result<Option<FcmProfileConfig>, ConfigError> {
+    const KEYS: [&str; 5] = [
+        "BUZZ_PUSH_FCM_PROJECT_ID",
+        "BUZZ_PUSH_FCM_CLIENT_EMAIL",
+        "BUZZ_PUSH_FCM_PRIVATE_KEY",
+        "BUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256",
+        "BUZZ_PUSH_PUBLIC_FCM_DELIVERY_URL",
+    ];
+    let present = KEYS
+        .iter()
+        .filter(|key| e.get(**key).map(String::as_str).is_some_and(|v| !v.is_empty()))
+        .count();
+    if present == 0 {
+        return Ok(None);
+    }
+    if present != KEYS.len() {
+        let missing = KEYS
+            .iter()
+            .find(|key| e.get(**key).map(String::as_str).is_none_or(|v| v.is_empty()))
+            .copied()
+            .unwrap_or(KEYS[0]);
+        return Err(ConfigError::Missing(missing));
+    }
+    let required = |key: &'static str| {
+        e.get(key)
+            .map(String::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or(ConfigError::Missing(key))
+    };
+    let signing_cert_sha256 = required("BUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256")?.to_owned();
+    if signing_cert_sha256.len() != 64
+        || !signing_cert_sha256
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err(ConfigError::Invalid(
+            "BUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256",
+        ));
+    }
+    let public_delivery_url = required("BUZZ_PUSH_PUBLIC_FCM_DELIVERY_URL")?
+        .parse::<url::Url>()
+        .map_err(|_| ConfigError::Invalid("BUZZ_PUSH_PUBLIC_FCM_DELIVERY_URL"))?;
+    if public_delivery_url.scheme() != "https"
+        || public_delivery_url.host_str() != Some("push.buzz.xyz")
+        || public_delivery_url.port().is_some()
+        || public_delivery_url.path() != "/v1/deliveries/fcm"
+        || public_delivery_url.query().is_some()
+        || public_delivery_url.fragment().is_some()
+        || !public_delivery_url.username().is_empty()
+        || public_delivery_url.password().is_some()
+    {
+        return Err(ConfigError::Invalid("BUZZ_PUSH_PUBLIC_FCM_DELIVERY_URL"));
+    }
+    Ok(Some(FcmProfileConfig {
+        project_id: required("BUZZ_PUSH_FCM_PROJECT_ID")?.to_owned(),
+        client_email: required("BUZZ_PUSH_FCM_CLIENT_EMAIL")?.to_owned(),
+        private_key_pem: required("BUZZ_PUSH_FCM_PRIVATE_KEY")?.to_owned(),
+        signing_cert_sha256,
+        public_delivery_url,
+    }))
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::from_map(&std::env::vars().collect())
@@ -176,6 +249,7 @@ impl Config {
         let endpoint_quota_max_deliveries =
             bounded_positive("BUZZ_PUSH_ENDPOINT_QUOTA_MAX_DELIVERIES", 10, 10_000)?;
         let profile = parse_profile(e)?;
+        let fcm = parse_fcm(e)?;
         let bind_addr = e
             .get("BUZZ_PUSH_BIND_ADDR")
             .map(String::as_str)
@@ -197,6 +271,7 @@ impl Config {
             endpoint_quota_window_seconds,
             endpoint_quota_max_deliveries,
             profile,
+            fcm,
             database_url: req(e, "DATABASE_URL")?.to_owned(),
             app_attest_root_cert_path: req(e, "BUZZ_PUSH_APP_ATTEST_ROOT_CERT_PATH")?.into(),
             grant_keys,
@@ -328,6 +403,32 @@ mod tests {
             env.insert("BUZZ_PUSH_TOKEN_KEYS".into(), token_keys);
             assert!(Config::from_map(&env).is_err());
         }
+    }
+
+    #[test]
+    fn fcm_profile_is_optional_and_all_or_nothing() {
+        let config = Config::from_map(&base()).unwrap();
+        assert!(config.fcm.is_none());
+
+        let mut env = base();
+        env.insert("BUZZ_PUSH_FCM_PROJECT_ID".into(), "nest".into());
+        assert!(Config::from_map(&env).is_err());
+
+        env.insert("BUZZ_PUSH_FCM_CLIENT_EMAIL".into(), "svc@nest.iam.gserviceaccount.com".into());
+        env.insert(
+            "BUZZ_PUSH_FCM_PRIVATE_KEY".into(),
+            "-----BEGIN PRIVATE KEY-----\nMII\n-----END PRIVATE KEY-----\n".into(),
+        );
+        env.insert(
+            "BUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256".into(),
+            "aa".repeat(32),
+        );
+        env.insert(
+            "BUZZ_PUSH_PUBLIC_FCM_DELIVERY_URL".into(),
+            "https://push.buzz.xyz/v1/deliveries/fcm".into(),
+        );
+        let config = Config::from_map(&env).unwrap();
+        assert_eq!(config.fcm.as_ref().unwrap().project_id, "nest");
     }
 
     #[test]

@@ -43,6 +43,8 @@ Supporting another application identity requires an explicit code, schema,
 chart, credential, and deployment change; this gateway does not currently
 select among multiple application profiles.
 
+Optional Android FCM profile (all or nothing): `BUZZ_PUSH_FCM_PROJECT_ID`, `BUZZ_PUSH_FCM_CLIENT_EMAIL`, `BUZZ_PUSH_FCM_PRIVATE_KEY`, `BUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256` (64 lowercase hex), and `BUZZ_PUSH_PUBLIC_FCM_DELIVERY_URL` (`https://push.buzz.xyz/v1/deliveries/fcm`). When set, the gateway serves `buzz-android-fcm` with signing-cert attestation and a constant FCM data message. When absent, the process stays APNs-only.
+
 Optional endpoint quota policy variables are `BUZZ_PUSH_ENDPOINT_QUOTA_WINDOW_SECONDS` (default `10`, max `86400`) and `BUZZ_PUSH_ENDPOINT_QUOTA_MAX_DELIVERIES` (default `10`, max `10000`). These are Buzz policy hypotheses, not Apple-published limits; tune under load while retaining a hard ceiling.
 
 ## Secret and key rotation rules

@@ -14,17 +14,22 @@ pub const MAX_GRANT_BYTES: usize = 4096;
 pub const MAX_ENDPOINT_HEX_BYTES: usize = 512;
 pub const APNS_RECONNECT_PAYLOAD: &[u8] =
     br#"{"aps":{"alert":{"body":"Reconnect to your relay now"},"mutable-content":1}}"#;
+/// Gateway-owned FCM data object. Inserted as raw bytes into every HTTP v1
+/// send; never serialized from a relay request, grant, or token.
+pub const FCM_RECONNECT_DATA: &[u8] = br#"{"buzz":"reconnect"}"#;
 pub const WIRE_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AppProfile {
     BuzzIosDogfood,
+    BuzzAndroidFcm,
 }
 impl AppProfile {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::BuzzIosDogfood => "buzz-ios-dogfood",
+            Self::BuzzAndroidFcm => "buzz-android-fcm",
         }
     }
 }

@@ -228,7 +228,7 @@ The APNs application body is the exact UTF-8 byte constant `{"aps":{"alert":{"bo
 
 ### FCM
 
-A future FCM profile MUST define one gateway-owned constant data message with identical noninterference semantics. Until that constant and its wire tests are registered, FCM is not a conforming v1 public-gateway profile.
+The FCM application data object is the exact UTF-8 byte constant `{"buzz":"reconnect"}`. It has no notification member, event identifier, unread count, title, body, or relay-supplied byte. The gateway MUST insert that exact object as `message.data` for every accepted FCM HTTP v1 attempt; it MUST NOT serialize any relay request, endpoint grant, provider response, or generic JSON value into `data`. `message.token`, `message.android.priority`, and `message.android.ttl` are routing controls and MUST NOT be copied into `data`. The gateway MUST NOT send a `notification` key. On receipt, the application reconnects using stored relay state and fetches authoritative events through ordinary authenticated `REQ`; banner text comes from those fetched events, never from the FCM payload.
 
 ### UnifiedPush (optional)
 
@@ -419,6 +419,30 @@ Responses:
 
 The gateway performs one APNs request, except that an APNs expired-provider-token response permits one credential refresh and one retry. The application body is always the exact constant registered in the APNs transport profile above; no request or grant field enters it.
 
+## Public FCM Gateway Profile (Buzz, normative)
+
+This section registers the Android last-hop profile `buzz-android-fcm`. It is an optional profile of NIP-PL. Every requirement here is normative for implementations that use it. Delivery is `POST https://push.buzz.xyz/v1/deliveries/fcm`. Challenge, delegation, rotation, and revocation routes are shared with the APNs profile; only enrollment attestation and the delivery transport differ.
+
+### Registered values and lease mapping
+
+The registered `app_profile` value is `buzz-android-fcm`. `transport` MUST be `fcm`. The lease `endpoint` MUST contain the opaque `endpoint_grant`, not the raw FCM registration token. The gateway stores the token in encrypted custody and never returns it.
+
+v1 enrollment attestation is **signing-certificate binding**, not Play Integrity and not Android Key Attestation. The client signs the exact enrollment transcript with an ECDSA P-256 key and names the SHA-256 of the APK signing certificate. The gateway accepts the enrollment only when that digest equals the configured value and the signature verifies over the transcript. Token-to-key binding remains the same bootstrap assumption as APNs. A later revision MAY require Android Key Attestation (OID 1.3.6.1.4.1.11129.2.1.17) once a pinned Google root and wire tests exist.
+
+The `attestation` member is standard-base64 of this closed JSON object:
+
+```json
+{"v":1,"alg":"ES256","signing_cert_sha256":"<64-lowercase-hex>","public_key":"<standard-base64 uncompressed P-256>","signature":"<standard-base64 ECDSA>"}
+```
+
+`key_id` is standard-base64 of SHA-256(`public_key`). Subsequent assertions are:
+
+```json
+{"v":1,"alg":"ES256","counter":<strictly-increasing-uint>,"signature":"<standard-base64 ECDSA>"}
+```
+
+FCM registration tokens are 16..512 bytes of `A-Za-z0-9_.:-`. The HTTP v1 application data object is always the constant registered in the FCM transport profile above.
+
 ## Implementation Notes (Buzz, non-normative)
 
 Per `RESEARCH/PUSH_RELAY_INTEGRATION.md` (pinned SHA `88c089d`): the lease matcher hooks the generic post-storage dispatch seam (`buzz-relay/src/handlers/event.rs:245 dispatch_persistent_event`), not `handle_side_effects`; Redis pub/sub is community-scoped routing precedent but not the durable offline-matching source; `event_mentions` is a ready indexed primitive for self-`#p` and needs-action subscriptions but is **not** authorization — private-channel wakes re-check same-community visibility at match/send time. Known footgun: some internal producers bypass `dispatch_persistent_event`; implementation must centralize durable dispatch or add push dispatch at each internal publish path.
@@ -450,3 +474,4 @@ Zombie leases (e.g. `#h` after leaving a channel) are neutralized by match-time 
 - Classes: `silent`, `default`, `time_sensitive`, `urgent`
 - `h_grammar` values: `"uuid-v4-lowercase"` (initial entry; origins may register additional grammars with this NIP)
 - Public APNs gateway profile: base URL `https://push.buzz.xyz`; app profile `buzz-ios-dogfood`; wire version `1`
+- Public FCM gateway profile: delivery URL `https://push.buzz.xyz/v1/deliveries/fcm`; app profile `buzz-android-fcm`; attestation `signing-cert`; wire version `1`

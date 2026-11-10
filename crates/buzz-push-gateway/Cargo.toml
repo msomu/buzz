@@ -26,9 +26,11 @@ minicbor = "0.25"
 chrono = { workspace = true }
 hex = { workspace = true }
 getrandom = "0.4"
+jsonwebtoken = { workspace = true, features = ["use_pem"] }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 nostr = { workspace = true }
+p256 = { version = "0.13", features = ["ecdsa"] }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["http2"] }
 serde = { workspace = true }

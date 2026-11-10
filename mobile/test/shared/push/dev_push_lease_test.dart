@@ -319,6 +319,73 @@ void main() {
     );
   });
 
+  test('publishes kind-30350 lease with transport fcm', () async {
+    final androidDescriptor = BuzzPushLeaseDescriptor.fromRelayInformation(
+      _androidDescriptorJson(relay.public),
+      appProfile: buzzAndroidPushAppProfile,
+    );
+    final androidGrant = BuzzPushEndpointGrant(
+      relayOrigin: 'wss://tenant.example:8443',
+      relayPubkey: relay.public,
+      installationId: 'c' * 32,
+      endpointGrant: 'opaque-grant',
+      endpointHash: 'd' * 64,
+      appProfile: buzzAndroidPushAppProfile,
+      endpointEpoch: 1,
+      generation: 1,
+      expiresAt: 1756212000,
+    );
+    late String plaintext;
+    await publishBuzzDevPushLease(
+      grant: androidGrant,
+      leaseGeneration: 3,
+      descriptor: androidDescriptor,
+      nsec: signer.nsec,
+      memberPubkey: signer.public,
+      subscriptions: [
+        BuzzPushSubscription(
+          filter: BuzzPushFilter(kinds: const [9], pTags: [signer.public]),
+          notificationClass: 'default',
+        ),
+      ],
+      now: () => now,
+      submit:
+          ({required kind, required content, required tags, createdAt}) async {
+            plaintext = nip44Decrypt(
+              getConversationKey(relay.secret, signer.public),
+              content,
+            );
+            return const NostrEvent(
+              id: 'fcm-lease',
+              pubkey: '',
+              createdAt: 0,
+              kind: 0,
+              tags: [],
+              content: 'saved',
+              sig: '',
+            );
+          },
+    );
+    expect(jsonDecode(plaintext), {
+      'v': 1,
+      'origin': 'wss://tenant.example:8443',
+      'app_profile': 'buzz-android-fcm',
+      'transport': 'fcm',
+      'endpoint': 'opaque-grant',
+      'generation': 3,
+      'active': true,
+      'subscriptions': [
+        {
+          'filter': {
+            'kinds': [9],
+            '#p': [signer.public],
+          },
+          'class': 'default',
+        },
+      ],
+    });
+  });
+
   test('descriptor rejects unknown push fields', () {
     final information = _descriptorJson(relay.public);
     (information['push'] as Map<String, dynamic>)['future'] = true;
@@ -390,6 +457,18 @@ Future<void> _deliverAcknowledgement(
 
 BuzzPushLeaseDescriptor _descriptor(String relayPubkey) =>
     BuzzPushLeaseDescriptor.fromRelayInformation(_descriptorJson(relayPubkey));
+
+Map<String, dynamic> _androidDescriptorJson(String relayPubkey) {
+  final json = _descriptorJson(relayPubkey);
+  final push = json['push'] as Map<String, dynamic>;
+  push['app_profiles'] = [
+    {'id': 'buzz-android-fcm', 'transport': 'fcm'},
+  ];
+  push['class_support'] = {
+    'fcm': ['default'],
+  };
+  return json;
+}
 
 Map<String, dynamic> _descriptorJson(String relayPubkey) => {
   'supported_extensions': ['nip-er', 'nip-pl'],

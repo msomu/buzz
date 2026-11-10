@@ -3,9 +3,12 @@ use buzz_push_gateway::{
     app_attest::AppAttestVerifier,
     authority::AuthorityStore,
     config::Config,
+    fcm::{FcmTransport, ServiceAccountToken},
     grant::{GrantKey, GrantKeyring},
+    http::FcmRuntime,
     postgres::PostgresAuthorityStore,
     router_with_metrics,
+    signing_cert::SigningCertVerifier,
     token::{TokenKey, TokenKeyring},
     AppState,
 };
@@ -47,9 +50,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             configured.app_attest_app_id.clone(),
             app_attest_root.clone(),
         )?;
+        let fcm = match &c.fcm {
+            Some(fcm) => {
+                let tokens = Arc::new(ServiceAccountToken::from_pem(
+                    fcm.client_email.clone(),
+                    &fcm.private_key_pem,
+                )?);
+                Some(Arc::new(FcmRuntime {
+                    transport: Arc::new(FcmTransport::http_v1(fcm.project_id.clone(), tokens)?),
+                    signing_cert: Arc::new(SigningCertVerifier::new(&fcm.signing_cert_sha256)?),
+                    delivery_url: fcm.public_delivery_url.clone(),
+                }))
+            }
+            None => None,
+        };
         buzz_push_gateway::http::ProfileRuntime {
             app_attest: Arc::new(apple),
             transport,
+            fcm,
         }
     };
     let grant_keyring = GrantKeyring::new(

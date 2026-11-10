@@ -295,7 +295,7 @@ class BuzzPushLeaseRevocationOutbox {
         .where(
           (grant) =>
               grant.relayOrigin == relayOrigin &&
-              grant.appProfile == buzzDevPushAppProfile,
+              isBuzzPushAppProfile(grant.appProfile),
         )
         .toList();
     if (matching.length != 1) {

@@ -137,7 +137,7 @@ Future<void> _deactivateCommunityPushLease(
       .where(
         (grant) =>
             grant.relayOrigin == descriptor.origin &&
-            grant.appProfile == buzzDevPushAppProfile,
+            isBuzzPushAppProfile(grant.appProfile),
       )
       .firstOrNull;
   if (matchingGrant == null) {

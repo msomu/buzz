@@ -112,6 +112,7 @@ class BuzzPushBootstrap extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     useListenable(apnsDeviceToken);
+    useListenable(fcmDeviceToken);
     final registrationAttempt = useMemoized(BuzzPushAttemptGate.new);
     final publicationAttempt = useMemoized(BuzzPushAttemptGate.new);
     final tombstoneAttempt = useMemoized(BuzzPushAttemptGate.new);
@@ -251,7 +252,7 @@ class BuzzPushBootstrap extends HookConsumerWidget {
       ],
     );
 
-    final token = apnsDeviceToken.value;
+    final token = buzzPushDeviceToken.value;
     useEffect(
       () {
         if (!_ready(session, config, community, memberPubkey) ||
